@@ -1,0 +1,9 @@
+.vscode
+*venv*
+*sqlite3*
+*.log*
+*.logs*
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

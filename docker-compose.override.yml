@@ -1,0 +1,37 @@
+services:
+  codelab:
+    restart: "no"
+    ports:
+      - "8000:8000"
+    build:
+      context: ./codelab
+    # command: sleep infinity  # Infinite loop to keep container alive doing nothing
+    command:
+      - fastapi
+      - run
+      - --reload
+      - "src/main.py"
+
+    develop:
+      watch:
+        - path: ./codelab
+          action: sync
+          target: /codelab
+          ignore:
+            - .venv
+        - path: ./pyproject.toml
+          action: rebuild
+    volumes:
+      - ./codelab/htmlcov:/codelab/htmlcov
+      - ./codelab/src:/codelab/src
+    environment:
+      SMTP_HOST: "mailcatcher"
+      SMTP_PORT: "1025"
+      SMTP_TLS: "false"
+      EMAILS_FROM_EMAIL: "noreply@example.com"
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    ports:
+      - "1080:1080"
+      - "1025:1025"

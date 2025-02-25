@@ -1,0 +1,69 @@
+services:
+
+  redis:
+    image: redis:7.4
+
+  codelab:
+    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    restart: always
+    build:
+      context: ./codelab
+    depends_on:
+      - redis
+      - prestart
+    volumes:
+      - ./codelab/database:/codelab/database
+      - ./codelab/logs:/codelab/logs
+    env_file:
+      - .env
+    environment: &common_env
+      - SQLITE_DATABASE_PATH=${SQLITE_DATABASE_PATH}
+      - DOMAIN=${DOMAIN}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
+      - SECRET_KEY=${SECRET_KEY?Variable not set}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - EMAILS_FROM_EMAIL=${EMAILS_FROM_EMAIL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - CELERY_DEFAULT_QUEUE=${CELERY_DEFAULT_QUEUE?Variable not set}
+      - EXTERNAL_API_KEY=${EXTERNAL_API_KEY}
+
+    healthcheck:
+      test: "curl -s -f http://localhost:8000/api/v1/health-check/ | get -n 1 | grep 200"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  prestart:
+    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    build:
+      context: ./codelab
+    command: bash ./scripts/prestart.sh
+    depends_on:
+      - redis
+    volumes:
+      - ./codelab/database:/codelab/database
+      - ./codelab/src:/codelab/src
+    env_file:
+      - .env
+    environment: *common_env
+
+  codelab-worker:
+    entrypoint: ["/bin/bash", "-c", "./celery_entry_point.sh"]
+    build:
+      context: ./codelab
+    depends_on:
+      - redis
+      - prestart
+      - codelab
+    volumes:
+      - ./codelab/src:/codelab/src
+      - ./codelab/logs:/codelab/logs
+      - ./codelab/database:/codelab/database
+    env_file:
+      - .env
+    environment: *common_env
