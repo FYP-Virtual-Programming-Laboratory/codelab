@@ -43,9 +43,7 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def all_cors_origins(self) -> list[str]:
-        return [str(origin).rstrip("/") for origin in self.BACKEND_CORS_ORIGINS] + [
-            self.FRONTEND_HOST
-        ]
+        return [str(origin).rstrip("/") for origin in self.BACKEND_CORS_ORIGINS]
 
     PROJECT_NAME: str
     SENTRY_DSN: HttpUrl | None = None
@@ -65,10 +63,7 @@ class Settings(BaseSettings):
     # Celery settings
     CELERY_BROKER_URL: str = "redis://localhost:6379"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379"
-    CELERY_GRADING_QUEUE: str
-    CELERY_LIFECYCLE_EVENTS_QUEUE: str
     CELERY_DEFAULT_QUEUE: str
-
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
