@@ -6,10 +6,12 @@ from sqlmodel import Session
 
 from src.core.dependecies import require_db_session
 from src.events.api.routes import router as events_router
+from src.sandbox.routes import router as sandbox_routes
 from src.worker import celery_app
 
 router = APIRouter()
 router.include_router(events_router, prefix="/events", tags=["events"])
+router.include_router(sandbox_routes, prefix="/sandbox", tags=["sandbox"])
 
 
 class HealthCheckResponse(BaseModel):

@@ -29,9 +29,17 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
         extra="ignore",
     )
+
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     EXTERNAL_API_KEY: str = secrets.token_urlsafe(32)
+    VPL_API_KEY: str = secrets.token_urlsafe(32)
+
+    SUBMISSION_DIR: str
+    FILESYSTEM_DIR: str
+    DOCKER_HUB_USERNAME: str
+    DOCKER_HUB_PASSWORD: str
+    DOCKER_HUB_NAMESPACE: str
 
     # 60 minutes * 24 hours * 8 days = 8 days
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
@@ -64,6 +72,8 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379"
     CELERY_DEFAULT_QUEUE: str
+    CELERY_BUILD_QUEUE: str
+    CELERY_BUILD_QUEUE_SYSBOX: str
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
@@ -80,6 +90,7 @@ class Settings(BaseSettings):
     def _enforce_non_default_secrets(self) -> Self:
         self._check_default_secret("SECRET_KEY", self.SECRET_KEY)
         self._check_default_secret("EXTERNAL_API_KEY", self.EXTERNAL_API_KEY)
+        self._check_default_secret("VPL_API_KEY", self.VPL_API_KEY)
         return self
 
 

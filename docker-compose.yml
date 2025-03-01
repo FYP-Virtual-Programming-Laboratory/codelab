@@ -2,18 +2,31 @@ services:
 
   redis:
     image: redis:7.4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  codelab:
+  server:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
     restart: always
     build:
       context: ./codelab
+    ports:
+      - "8000:8000"
     depends_on:
-      - redis
-      - prestart
-    volumes:
+      redis:
+        condition: service_healthy
+      prestart:
+        condition: service_completed_successfully
+    volumes: &common_volumes
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./codelab/src:/codelab/src
       - ./codelab/database:/codelab/database
       - ./codelab/logs:/codelab/logs
+      - ./codelab/sandbox_filesystem:/codelab/sandbox_filesystem
     env_file:
       - .env
     environment: &common_env
@@ -30,6 +43,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CELERY_DEFAULT_QUEUE=${CELERY_DEFAULT_QUEUE?Variable not set}
+      - CELERY_BUILD_QUEUE=${CELERY_BUILD_QUEUE?Variable not set}
       - EXTERNAL_API_KEY=${EXTERNAL_API_KEY}
 
     healthcheck:
@@ -44,26 +58,60 @@ services:
       context: ./codelab
     command: bash ./scripts/prestart.sh
     depends_on:
-      - redis
-    volumes:
-      - ./codelab/database:/codelab/database
-      - ./codelab/src:/codelab/src
+      redis:
+        condition: service_healthy
+    volumes: *common_volumes
+    environment: *common_env
     env_file:
       - .env
-    environment: *common_env
 
   codelab-worker:
     entrypoint: ["/bin/bash", "-c", "./celery_entry_point.sh"]
     build:
       context: ./codelab
     depends_on:
-      - redis
-      - prestart
-      - codelab
-    volumes:
-      - ./codelab/src:/codelab/src
-      - ./codelab/logs:/codelab/logs
-      - ./codelab/database:/codelab/database
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_started
+    volumes: *common_volumes
+    environment: *common_env
     env_file:
       - .env
+
+  codelab-worker-sysbox:
+    restart: always
+    entrypoint: ["/bin/bash", "-c", "./sysbox_celery_worker_entry_point.sh"]
+    build:
+      context: ./codelab
+    depends_on:
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_started
+    runtime: sysbox-runc
+    shm_size: '500m'
+    privileged: true
+    volumes:
+      - ./codelab/src:/codelab/src
+      - ./codelab/database:/codelab/database
+      - ./codelab/logs:/codelab/logs
+      # - /var/run/docker.sock:/var/run/docker.sock
+      - ./codelab/sandbox_filesystem:/codelab/sandbox_filesystem
     environment: *common_env
+    env_file:
+      - .env
+
+  codelab-beat:
+      entrypoint: ["/bin/bash", "-c", "./celery_beat_entry_point.sh"]
+      build:
+        context: ./codelab
+      depends_on:
+        redis:
+          condition: service_healthy
+        server:
+          condition: service_started
+      volumes: *common_volumes
+      environment: *common_env
+      env_file:
+        - .env

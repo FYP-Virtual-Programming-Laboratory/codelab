@@ -3,6 +3,8 @@
 *sqlite3*
 *.log*
 *.logs*
+*database*
+*sandbox_filesystem*
 /test-results/
 /playwright-report/
 /blob-report/

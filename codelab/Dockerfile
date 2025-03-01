@@ -1,9 +1,30 @@
-FROM python:3.12-alpine
+FROM alpine:latest
+
+RUN apk update && apk add \
+    acl \
+    bash \
+    curl \
+    findmnt \
+    nano \
+    strace \
+    tree \
+    libcap \
+    bind-tools \
+    nftables \
+    curl \
+    gcc \
+    python3-dev \
+    musl-dev \
+    linux-headers \
+    # to ensure we can run services on the container.
+    openrc
+
+# install docker since we are using sysbox-runc runtime to run the container
+RUN apk update && apk add docker
+
 
 WORKDIR /codelab/
 
-# Install OS dependecies bash
-RUN apk --no-cache add curl bash gcc python3-dev musl-dev linux-headers
 
 # Install uv
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
@@ -37,10 +58,16 @@ COPY ./pyproject.toml ./uv.lock ./alembic.ini /codelab/
 COPY ./src /codelab/src
 
 COPY ./celery_entry_point.sh /codelab/celery_entry_point.sh
+COPY ./sysbox_celery_worker_entry_point.sh /codelab/sysbox_celery_worker_entry_point.sh
+COPY ./server_entry_point.sh /codelab/server_entry_point.sh
+COPY ./celery_beat_entry_point.sh /codelab/celery_beat_entry_point.sh
+
 
 # Sync the project
 # Ref: https://docs.astral.sh/uv/guides/integration/docker/#intermediate-layers
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
 
-CMD ["fastapi", "run", "--workers", "2", "src/main.py"]
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# CMD ["fastapi", "run", "--workers", "2", "src/main.py"]
