@@ -1,7 +1,8 @@
-# from pydantic import BaseModel, BeforeValidator, ValidationError
+from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, model_validator
+from pydantic import AfterValidator, BaseModel, JsonValue, model_validator
 from typing_extensions import Self
 
 
@@ -86,3 +87,50 @@ class CreateLanguageImageSchema(BaseModel):
             )
 
         return self
+
+
+class UpdateLanguageSchema(BaseModel):
+    name: str | None = None
+    version: str | None = None
+    description: str | None = None
+    base_image: str | None = None
+    test_build: bool | None = None
+    file_extension: str | None = None
+    compile_file_extension: str | None = None
+    build_test_file_content: str | None = None
+    build_test_std_in: str | None = None
+    build_test_std_out: str | None = None
+    requires_compilation: bool | None = None
+    compilation_command: str | None = None
+    default_execution_command: str | None = None
+    entrypoint_script: str | None = None
+
+
+class LanguageImagePublicShcema(BaseModel):
+    id: UUID
+    name: str
+    version: str
+    status: str
+    description: str
+    base_image: str
+    docker_image_id: str | None
+    build_logs: JsonValue | None
+    push_logs: JsonValue | None
+    failure_message: str | None
+    test_build: bool
+    file_extension: str
+    compile_file_extension: str | None
+    build_test_file_content: str | None
+    build_test_std_in: str | None
+    build_test_std_out: str | None
+    requires_compilation: bool
+    compilation_command: str | None
+    default_execution_command: str
+    entrypoint_script: str | None
+    image_size: str | None
+    image_architecture: str | None
+    created_at: datetime
+    updated_at: datetime | None
+
+    class Config:
+        arbitrary_types_allowed = True

@@ -90,7 +90,7 @@ services:
       server:
         condition: service_started
     runtime: sysbox-runc
-    shm_size: '500m'
+    shm_size: '3gb'
     privileged: true
     volumes:
       - ./codelab/src:/codelab/src

@@ -1,8 +1,8 @@
-"""First migration
+"""First migrations
 
-Revision ID: 0d72b97d4f0c
+Revision ID: 840e7b8fd84c
 Revises:
-Create Date: 2025-02-28 19:51:54.137317
+Create Date: 2025-03-01 13:47:54.571016
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision = '0d72b97d4f0c'
+revision = '840e7b8fd84c'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -28,7 +28,7 @@ def upgrade():
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('base_image', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('docker_image_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('status', sa.Enum('created', 'building', 'pushing', 'pushed', 'pulling', 'testing', 'available', 'unavailable', 'failed', name='imagestatus'), nullable=False),
+    sa.Column('status', sa.Enum('created', 'building', 'build_succeeded', 'build_failed', 'pushing', 'push_failed', 'pushed', 'pulling', 'pull_failed', 'available', 'testing', 'testing_failed', 'scheduled_for_rebuild', 'scheduled_for_deletion', 'unavailable', 'failed', name='imagestatus'), nullable=False),
     sa.Column('build_logs', sa.JSON(), nullable=True),
     sa.Column('push_logs', sa.JSON(), nullable=True),
     sa.Column('failure_message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -42,6 +42,8 @@ def upgrade():
     sa.Column('compilation_command', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('default_execution_command', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('entrypoint_script', sqlmodel.sql.sqltypes.AutoString(length=5000), nullable=True),
+    sa.Column('image_size', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('image_architecture', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###

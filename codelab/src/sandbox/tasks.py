@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlmodel import Session, col, select
@@ -5,7 +6,7 @@ from sqlmodel import Session, col, select
 from src.core.config import settings
 from src.core.db import engine
 from src.models import LanguageImage
-from src.sandbox.ochestator.builder import ImageBuilder
+from src.sandbox.ochestator.image import ImageBuilder
 from src.schemas import ImageStatus
 from src.utils import CeleryHelper
 from src.worker import celery_app
@@ -95,3 +96,56 @@ def cleanup_handing_builds_tasks() -> None:
 
             db_session.add(language_image)
             db_session.commit()
+
+
+@celery_app.task(name="execute_scheduled_build_actions_task")
+def execute_scheduled_build_actions_task() -> None:
+    """Execute scheduled build actions."""
+
+    # get all scheduled builds and execute them
+    with Session(engine) as db_session:
+        language_image = db_session.exec(
+            select(LanguageImage)
+            .filter(
+                col(LanguageImage.status).in_(
+                    [
+                        ImageStatus.scheduled_for_rebuild,
+                        ImageStatus.scheduled_for_deletion,
+                        ImageStatus.scheduled_for_prune,
+                    ]
+                )
+            )
+            .order_by(col(LanguageImage.updated_at))
+        ).first()
+
+        if not language_image:
+            return
+
+        # ensuer that its moved to the bottom of the queue after this attempt
+        language_image.updated_at = datetime.now()
+        db_session.add(language_image)
+        db_session.commit()
+
+        if language_image.status == ImageStatus.scheduled_for_rebuild:
+            # first check that no build is in progress
+            if CeleryHelper.is_being_executed(
+                "build_language_image_task"
+            ) or CeleryHelper.is_being_executed("build_language_image_task"):
+                return
+            build_language_image_task.delay(image_id=language_image.id)
+            return
+
+        if language_image.status == ImageStatus.scheduled_for_deletion:
+            builder = ImageBuilder(db_session, language_image)
+            successful = builder.remove()
+            if successful:
+                db_session.delete(language_image)
+                db_session.commit()
+
+        if language_image.status == ImageStatus.scheduled_for_prune:
+            builder = ImageBuilder(db_session, language_image)
+            successful = builder.remove()
+            if successful:
+                language_image.status = ImageStatus.unavailable
+                db_session.add(language_image)
+                db_session.commit()

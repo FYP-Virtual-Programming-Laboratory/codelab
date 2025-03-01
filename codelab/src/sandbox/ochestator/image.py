@@ -11,6 +11,7 @@ from docker.errors import (  # type: ignore
     NotFound,
 )
 from docker.models.containers import Container  # type: ignore
+from docker.models.images import Image  # type: ignore
 from sqlmodel import Session
 
 from src.core.config import settings
@@ -18,6 +19,9 @@ from src.core.docker import get_authenticated_docker_client
 from src.log import logger
 from src.models import LanguageImage
 from src.schemas import ImageStatus
+
+bytes_size = 152279515
+BYTES_PER_MB_BINARY = 1_048_576  # 2^20 bytes, binary definition
 
 
 class ImageBuilder:
@@ -149,6 +153,12 @@ class ImageBuilder:
         if self.language_image.status == ImageStatus.build_succeeded:
             self._push()
 
+    def __get_image_size(self, image: Image) -> str | None:
+        # Check if image size is available
+        if "Size" in image.attrs:
+            return f"{image.attrs['Size'] // BYTES_PER_MB_BINARY:.2f} MB"
+        return None
+
     def pull(self) -> None:
         """
         Pulls the Docker image from Docker Hub and updates the language image status.
@@ -166,7 +176,10 @@ class ImageBuilder:
                 extra={"image_id": self.language_image.id, "error": str(error)},
             )
             return
+
         self.language_image.docker_image_id = image.id
+        self.language_image.image_size = self.__get_image_size(image)
+        self.language_image.image_architecture = image.attrs.get("Architecture", "")
         self._update_status(ImageStatus.available)
 
     def _execute_command(
@@ -218,6 +231,7 @@ class ImageBuilder:
                 volumes={self._image_folder: {"bind": workdir, "mode": "rw"}},
                 name=f"tests-image-{self.language_image.id}",
                 working_dir=workdir,
+                shm_size="2G",
             )
         except APIError as error:
             if error.status_code == 409:
@@ -313,3 +327,21 @@ class ImageBuilder:
         self._update_status(ImageStatus.available)
         container.stop()
         container.remove(v=True)
+
+    def remove(self) -> bool:
+        """Removes the Docker image."""
+
+        try:
+            self.docker_client.images.remove(
+                image=self.language_image.docker_image_id,
+                force=True,
+                noprune=False,
+            )
+            return True
+        except APIError as error:
+            logger.error(
+                f"Failed to remove language image {self.language_image.name}: {error}",
+                extra={"image_id": self.language_image.id, "error": str(error)},
+            )
+
+        return False

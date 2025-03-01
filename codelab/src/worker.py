@@ -27,6 +27,10 @@ def _log_task_after_run(task_id: str, task: Task, *args, **kwargs) -> None:  # t
 celery_app.conf.beat_schedule = {
     "cleanup_handing_builds_tasks": {
         "task": "cleanup_handing_builds_tasks",
-        "schedule": crontab(minute="*/1"),  # Runs every 5 minutes
+        "schedule": crontab(minute="*/5"),  # Runs every 5 minutes
+    },
+    "execute_scheduled_build_actions_task": {
+        "task": "execute_scheduled_build_actions_task",
+        "schedule": crontab(minute="*/1"),  # Runs every minutes
     },
 }
