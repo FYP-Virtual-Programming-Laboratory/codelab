@@ -2,7 +2,13 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, JsonValue, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    FilePath,
+    JsonValue,
+    model_validator,
+)
 from typing_extensions import Self
 
 
@@ -134,3 +140,9 @@ class LanguageImagePublicShcema(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class CreateTaskExecutionSchema(BaseModel):
+    external_user_id: str
+    external_excercise_id: str
+    entry_file_path: FilePath

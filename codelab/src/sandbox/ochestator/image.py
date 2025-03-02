@@ -1,26 +1,26 @@
 import base64
 import os
-import time
 from functools import cached_property
 from io import BytesIO
 
 from docker.errors import (  # type: ignore
     APIError,
     BuildError,
-    DockerException,
-    NotFound,
 )
-from docker.models.containers import Container  # type: ignore
 from docker.models.images import Image  # type: ignore
 from sqlmodel import Session
 
 from src.core.config import settings
-from src.core.docker import get_authenticated_docker_client
+from src.core.docker import get_shared_docker_client
 from src.log import logger
 from src.models import LanguageImage
+from src.sandbox.executor.build import ImageBuildExecutor
+from src.sandbox.ochestator.container import (
+    ContainerBuildFailed,
+    ContainerNotFound,
+)
 from src.schemas import ImageStatus
 
-bytes_size = 152279515
 BYTES_PER_MB_BINARY = 1_048_576  # 2^20 bytes, binary definition
 
 
@@ -32,7 +32,7 @@ class ImageBuilder:
     def __init__(self, db_session: Session, language_image: LanguageImage) -> None:
         self.db_session = db_session
         self.language_image = language_image
-        self.docker_client = get_authenticated_docker_client()
+        self.docker_client = get_shared_docker_client()
 
     @cached_property
     def _image_folder(self) -> str:
@@ -104,11 +104,6 @@ class ImageBuilder:
                 fileobj=dockerfile,
                 tag=str(self.language_image.id),
             )
-            image.tag(
-                repository=settings.DOCKER_HUB_NAMESPACE,
-                tag=str(self.language_image.id),
-            )
-            image.save()
         except (BuildError, APIError) as error:
             self._update_status(ImageStatus.build_failed, failure_message=str(error))
             logger.error(
@@ -118,91 +113,28 @@ class ImageBuilder:
             return None
 
         self.language_image.docker_image_id = image.id
+        self.language_image.image_size = self.__get_image_size(image)
+        self.language_image.image_architecture = image.attrs.get("Architecture", "")
+        self.language_image.docker_image_id = image.id
         self.language_image.build_logs = list(build_logs)  # type: ignore
         self._update_status(ImageStatus.build_succeeded)
-
-    def _push(self) -> None:
-        """
-        Pushes the Docker image to Docker Hub and updates the language image status.
-        """
-        self._update_status(ImageStatus.pushing)
-        try:
-            response = self.docker_client.images.push(
-                repository=settings.DOCKER_HUB_NAMESPACE,
-                tag=str(self.language_image.id),
-                stream=True,
-                decode=True,
-            )
-        except APIError as error:
-            self._update_status(ImageStatus.push_failed, failure_message=str(error))
-            logger.error(
-                f"Failed to push language image {self.language_image.name} to Docker Hub: {error}",
-                extra={"image_id": self.language_image.id, "error": str(error)},
-            )
-            return
-
-        self.language_image.push_logs = list(response)  # type: ignore
-        self._update_status(ImageStatus.pushed)
 
     def run(self) -> None:
         """
         Attempts to build and then push the Docker image.
         """
         self._build()
-
-        if self.language_image.status == ImageStatus.build_succeeded:
-            self._push()
+        if (
+            self.language_image.status == ImageStatus.build_succeeded
+            and self.language_image.test_build
+        ):
+            self.test()
 
     def __get_image_size(self, image: Image) -> str | None:
         # Check if image size is available
         if "Size" in image.attrs:
             return f"{image.attrs['Size'] // BYTES_PER_MB_BINARY:.2f} MB"
         return None
-
-    def pull(self) -> None:
-        """
-        Pulls the Docker image from Docker Hub and updates the language image status.
-        """
-        self._update_status(ImageStatus.pulling)
-        try:
-            image = self.docker_client.images.pull(
-                repository=settings.DOCKER_HUB_NAMESPACE,
-                tag=str(self.language_image.id),
-            )
-        except APIError as error:
-            self._update_status(ImageStatus.pull_failed, failure_message=str(error))
-            logger.error(
-                f"Failed to pull language image {self.language_image.name} from Docker Hub: {error}",
-                extra={"image_id": self.language_image.id, "error": str(error)},
-            )
-            return
-
-        self.language_image.docker_image_id = image.id
-        self.language_image.image_size = self.__get_image_size(image)
-        self.language_image.image_architecture = image.attrs.get("Architecture", "")
-        self._update_status(ImageStatus.available)
-
-    def _execute_command(
-        self, container: Container, command: str, workdir: str
-    ) -> tuple[int, tuple[bytes | None, bytes | None]]:
-        """
-        Executes a command inside the container.
-        Returns a tuple of (exit_code, (stdout, stderr)).
-        """
-        try:
-            full_cmd = f"bash -c '{command}'"
-            return container.exec_run(
-                cmd=full_cmd,
-                workdir=workdir,
-                demux=True,
-                tty=False,
-            )
-        except DockerException as error:
-            logger.error(
-                f"Failed to execute command in container {container.id}: {error}",
-                extra={"container_id": container.id, "error": str(error)},
-            )
-            return -1, (b"", b"")
 
     def test(self) -> None:
         """
@@ -212,121 +144,86 @@ class ImageBuilder:
         self._update_status(ImageStatus.testing)
 
         # Write build test file
-        build_file_name = f"build_test.{self.language_image.file_extension}"
+        build_file_name = f"BuildTest.{self.language_image.file_extension}"
         build_file_path = os.path.join(self._image_folder, build_file_name)
 
         with open(build_file_path, "w") as file:
             file.write(self.language_image.build_test_file_content)  # type: ignore
 
         os.chmod(build_file_path, 0o755)
-
         workdir = f"/{self.language_image.id}"
-        image = self.docker_client.images.get(self.language_image.docker_image_id)
 
         try:
-            container = self.docker_client.containers.run(
-                image=image,
-                detach=True,
-                command="sleep infinite",
-                volumes={self._image_folder: {"bind": workdir, "mode": "rw"}},
-                name=f"tests-image-{self.language_image.id}",
-                working_dir=workdir,
-                shm_size="2G",
+            executor = ImageBuildExecutor(
+                workdir=workdir,
+                mount_dir=self._image_folder,
+                language_image=self.language_image,
             )
-        except APIError as error:
-            if error.status_code == 409:
-                logger.error(
-                    f"Failed to start tests container for language image {self.language_image.name}: {error}",
-                    extra={"image_id": self.language_image.id, "error": str(error)},
+
+            execution_command = self.language_image.default_execution_command.replace(
+                "<filename>", build_file_name
+            )
+
+            if self.language_image.requires_compilation:
+                # Compile test file
+                compile_filename = (
+                    f"BuildTest.{self.language_image.compile_file_extension}"
                 )
-                try:
-                    container = self.docker_client.containers.get(
-                        f"tests-image-{self.language_image.id}"
-                    )
-                    container.stop()
-                    container.remove(v=True)
-                except NotFound:
+                compile_command = self.language_image.compilation_command.replace(  # type: ignore
+                    "<filename>", build_file_name
+                ).replace("<output_filename>", compile_filename)
+
+                result = executor.run(command=compile_command, is_compilation=True)
+                if result.state != "success":
                     logger.error(
-                        "No test container found: Container was already removed"
+                        f"Compilation failed with exit code {result.exit_code}: {result.std_err}"
                     )
+                    self._update_status(
+                        ImageStatus.testing_failed,
+                        failure_message=(
+                            f"Compilation failed with exit code {result.exit_code}: {result.std_err} \n"
+                            f"Result state: {result.state}\n"
+                            f"Expended time: {result.expended_time}\n"
+                        ),
+                    )
+                    return
 
-                return self.test()
+                execution_command = (
+                    self.language_image.default_execution_command.replace(
+                        "<filename>", compile_filename
+                    )
+                )
 
+            # after compilation execute the program itself
+            result = executor.run(command=execution_command, remove_container=True)
+            if result.state != "success":
+                logger.error(
+                    f"Execution failed with exit code {result.exit_code}: {result.std_err}"
+                )
+                self._update_status(
+                    ImageStatus.testing_failed,
+                    failure_message=(
+                        f"Test Program Execution failed with exit code {result.exit_code}: {result.std_err} \n"
+                        f"Result state: {result.state}\n"
+                        f"Expended time: {result.expended_time}\n"
+                    ),
+                )
+                return
+
+            self.language_image.build_test_std_out = result.std_out
+            self._update_status(ImageStatus.available)
+        except (ContainerBuildFailed, ContainerNotFound) as error:
+            logger.error(
+                f"An error occurred while building the container Error: {error.error_message}",
+                extra={"image_id": self.language_image.id, "error": str(error)},
+            )
             self._update_status(
                 ImageStatus.testing_failed,
-                failure_message=f"Failed to run tests: {error}",
+                failure_message=(
+                    "Container creation failed with exit_code "
+                    f"{error.exit_code} : {error.error_message}"
+                ),
             )
-            return
-
-        # Wait for container to be fully running
-        while container.status != "running":
-            logger.info(
-                "Waiting for container to start: status is %s", container.status
-            )
-            time.sleep(0.5)
-            container.reload()
-
-        if self.language_image.requires_compilation:
-            # Compile test file
-            compile_filename = (
-                f"build_test.{self.language_image.compile_file_extension}"
-            )
-            compile_command = self.language_image.compilation_command.replace(  # type: ignore
-                "<filename>", build_file_name
-            ).replace("<output_filename>", compile_filename)
-            exit_code, (_, std_err) = self._execute_command(
-                container, compile_command, workdir
-            )
-            if exit_code != 0:
-                logger.error("Failed to compile: %s", std_err)
-                self._update_status(
-                    ImageStatus.testing_failed,
-                    failure_message=f"Compilation failed with exit code {exit_code}: {std_err}",
-                )
-                return
-
-            # Execute compiled file
-            std_in = self.language_image.build_test_std_in
-            execution_command = self.language_image.default_execution_command.replace(
-                "<filename>", compile_filename
-            )
-            exit_code, (std_out, std_err) = self._execute_command(
-                container, f"{execution_command} <<< '{std_in}'", workdir
-            )
-            if exit_code != 0:
-                logger.error("Error executing" + execution_command + ": " + std_err)
-                self._update_status(
-                    ImageStatus.testing_failed,
-                    failure_message=f"Execution failed with exit code {exit_code}: {std_err} {std_out}",
-                )
-                return
-
-            self.language_image.build_test_std_out = (
-                std_out.decode("utf-8") if std_out else None
-            )
-        else:
-            # Execute test file directly
-            std_in = self.language_image.build_test_std_in
-            execution_command = self.language_image.default_execution_command.replace(
-                "<filename>", build_file_name
-            )
-            exit_code, (std_out, std_err) = self._execute_command(
-                container, f"{execution_command} <<< '{std_in}'", workdir
-            )
-            if exit_code != 0:
-                self._update_status(
-                    ImageStatus.testing_failed,
-                    failure_message=f"Execution failed with exit code {exit_code}: {std_err} {std_out}",
-                )
-                return
-
-            self.language_image.build_test_std_out = (
-                std_out.decode("utf-8") if std_out else None
-            )
-
-        self._update_status(ImageStatus.available)
-        container.stop()
-        container.remove(v=True)
 
     def remove(self) -> bool:
         """Removes the Docker image."""

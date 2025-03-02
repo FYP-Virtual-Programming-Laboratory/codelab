@@ -5,7 +5,9 @@ from celery.signals import task_postrun, task_prerun
 from src.core.config import settings
 from src.log import logger as main_logger
 
-celery_app = Celery(__name__, include=["src.worker", "src.sandbox.tasks"])
+celery_app = Celery(
+    __name__, include=["src.worker", "src.events.tasks", "src.sandbox.tasks"]
+)
 celery_app.conf.broker_url = settings.CELERY_BROKER_URL
 celery_app.conf.result_backend = settings.CELERY_RESULT_BACKEND
 celery_app.conf.task_default_queue = settings.CELERY_DEFAULT_QUEUE
@@ -31,6 +33,6 @@ celery_app.conf.beat_schedule = {
     },
     "execute_scheduled_build_actions_task": {
         "task": "execute_scheduled_build_actions_task",
-        "schedule": crontab(minute="*/1"),  # Runs every minutes
+        "schedule": crontab(minute="*/5"),  # Runs every minutes
     },
 }

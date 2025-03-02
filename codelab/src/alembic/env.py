@@ -15,7 +15,7 @@ fileConfig(config.config_file_name)
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
-from src.models import LanguageImage
+from src.models import *
 # target_metadata = mymodel.Base.metadata
 # target_metadata = None
 

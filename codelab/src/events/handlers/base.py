@@ -15,6 +15,6 @@ class AbstractLifeCycleEventHandler(ABC):
     def handle_event(
         self,
         external_session_id: str,
-        event_data: dict[str, Any],
+        event_data: Any,
     ) -> None:
         """Handle the event data."""

@@ -36,10 +36,8 @@ class Settings(BaseSettings):
     VPL_API_KEY: str = secrets.token_urlsafe(32)
 
     SUBMISSION_DIR: str
+    TESTING_DIR: str
     FILESYSTEM_DIR: str
-    DOCKER_HUB_USERNAME: str
-    DOCKER_HUB_PASSWORD: str
-    DOCKER_HUB_NAMESPACE: str
 
     # 60 minutes * 24 hours * 8 days = 8 days
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
@@ -73,7 +71,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379"
     CELERY_DEFAULT_QUEUE: str
     CELERY_BUILD_QUEUE: str
-    CELERY_BUILD_QUEUE_SYSBOX: str
+    CELERY_BUILD_QUEUE: str
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

@@ -22,7 +22,6 @@ RUN apk update && apk add \
 # install docker since we are using sysbox-runc runtime to run the container
 RUN apk update && apk add docker
 
-
 WORKDIR /codelab/
 
 

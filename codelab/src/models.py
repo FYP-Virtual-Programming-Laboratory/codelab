@@ -16,9 +16,8 @@ from sqlmodel import (
 )
 
 from src.schemas import (
-    ExecerciseExecutionResult,
+    DatabaseExecutionResult,
     ImageStatus,
-    TaskExecutionResult,
     TaskStatus,
 )
 
@@ -138,21 +137,25 @@ class LanguageImage(BaseModel, table=True):
 class Session(BaseModel, table=True):
     """This model represents a VPL session."""
 
-    external_id: str = Field(unique=True, db_index=True)
+    external_id: str = Field(unique=True, index=True)
     is_active: bool
 
     language_image_id: uuid.UUID = Field(foreign_key="languageimage.id")
     language_image: LanguageImage = Relationship(
         sa_relationship_kwargs={"lazy": "select"}
     )
-    config: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    configuration: SessionConfig = Relationship(
+        back_populates="session", sa_relationship_kwargs={"lazy": "select"}
+    )
 
 
 class SessionConfig(BaseModel, table=True):
     """This model represents a VPL session configuration."""
 
     session_id: uuid.UUID = Field(foreign_key="session.id")
-    session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    session: Session = Relationship(
+        sa_relationship_kwargs={"lazy": "select"},
+    )
 
     max_queue_size: PositiveInt = Field(
         default=15,
@@ -160,7 +163,7 @@ class SessionConfig(BaseModel, table=True):
     )
 
     max_number_of_runs: PositiveInt = Field(
-        default=100,
+        default=10,
         description="The maximum number of tasks allowed for a students to run in a session.",
     )
 
@@ -211,10 +214,12 @@ class User(BaseModel, table=True):
         ),
     )
     external_id: str = Field(index=True)
-    session_id: uuid.UUID = Field(foreign_key="session.id")
-    group_id: uuid.UUID | None = Field(foreign_key="group.id", nullable=True)
+    docker_container_id: str | None = Field(default=None)
 
+    session_id: uuid.UUID = Field(foreign_key="session.id")
     session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+    group_id: uuid.UUID | None = Field(foreign_key="group.id", nullable=True)
     group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
 
@@ -230,10 +235,40 @@ class Group(BaseModel, table=True):
     )
 
     external_id: str = Field(index=True)
+    docker_container_id: str | None = Field(default=None)
+
     session_id: uuid.UUID = Field(foreign_key="session.id")
     session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
-    users: list[User] = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+class Exercise(BaseModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "external_id",
+            name="session_id_unique_together_with_external_id",
+        ),
+    )
+
+    external_id: str = Field(index=True)
+    session_id: uuid.UUID = Field(foreign_key="session.id")
+    session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+
+class TestCase(BaseModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "exercise_id",
+            "external_id",
+            name="exercise_id_unique_together_with_external_id",
+        ),
+    )
+
+    external_id: str = Field(index=True)
+    exercise_id: uuid.UUID = Field(foreign_key="exercise.id")
+    exercise: Exercise = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    test_input: str
+    visible: bool
 
 
 class Tasks(BaseModel, table=True):
@@ -245,27 +280,28 @@ class Tasks(BaseModel, table=True):
     make a final submission to the grading service.
     """
 
+    celery_task_id: str | None = Field(default=None)
+    entry_file_path: str = Field(description="The entry file of the submitted program.")
+
+    exercise_id: uuid.UUID = Field(foreign_key="exercise.id")
+    exercise: Exercise = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
     user_id: uuid.UUID | None = Field(foreign_key="user.id")
-    user: User | None = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    user: User = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
     group_id: uuid.UUID | None = Field(foreign_key="group.id")
-    group: Group | None = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
-    celery_task_id: str | None = Field(default=None)
     status: TaskStatus = Field(default=TaskStatus.queued)
-    results: list[TaskExecutionResult] | None = Field(
+    results: list[DatabaseExecutionResult] | None = Field(
         default=None, sa_column=Column(JSON)
     )
-    std_ins: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    std_outs: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    std_errs: list[str] | None = Field(default=None, sa_column=Column(JSON))
-    exit_codes: list[int] | None = Field(default=None, sa_column=Column(JSON))
 
     class Config:
         arbitrary_types_allowed = True
 
 
-class ExecerciseSubmission(BaseModel, table=True):
+class ExerciseSubmission(BaseModel, table=True):
     """
     This model represents a VPL user / group execercise submission.
 
@@ -273,27 +309,15 @@ class ExecerciseSubmission(BaseModel, table=True):
     an excercise submission with all its assciated test cases.
     """
 
-    __table_args__ = (
-        UniqueConstraint(
-            "session_id",
-            "external_id",
-            name="session_id_unique_together_with_external_id",
-        ),
+    entry_file_path: str = Field(
+        description="The filename of the submitted program.",
     )
 
-    external_id: str = Field(index=True)
-
-    session_id: uuid.UUID | None = Field(foreign_key="session.id")
-    session: Session | None = Relationship(sa_relationship_kwargs={"lazy": "select"})
-
-    user_id: uuid.UUID | None = Field(foreign_key="user.id")
-    user: User | None = Relationship(sa_relationship_kwargs={"lazy": "select"})
-
-    group_id: uuid.UUID | None = Field(foreign_key="group.id")
-    group: Group | None = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    exercise_id: uuid.UUID = Field(foreign_key="exercise.id")
+    exercise: Exercise = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
     status: TaskStatus = Field(default=TaskStatus.queued)
-    results: list[ExecerciseExecutionResult] | None = Field(
+    results: list[DatabaseExecutionResult] | None = Field(
         default=None, sa_column=Column(JSON)
     )
 

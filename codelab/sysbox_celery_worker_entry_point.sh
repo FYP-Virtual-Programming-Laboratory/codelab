@@ -1,55 +1,24 @@
 #!/bin/sh
-set -e
+set -o errexit
+set -o nounset
 
 # Define the Celery queue name with a default value
-: "${CELERY_BUILD_QUEUE_SYSBOX:=sysbox_build}"
+: "${CELERY_DEFAULT_QUEUE:=default}"
+: "${CELERY_BUILD_QUEUE:=build}"
 
-# Define the Docker PID file location
-PIDFILE="/var/run/docker.pid"
+# run openrc
+openrc
+touch /run/openrc/softlevel
+service docker start
 
-# Clean up stale Docker PID file if necessary
-if [ -f "$PIDFILE" ]; then
-  PID=$(cat "$PIDFILE")
-  if ps -p "$PID" > /dev/null 2>&1; then
-    echo "Docker daemon already running with PID $PID. Exiting."
-    exit 1
-  else
-    echo "Stale PID file found. Removing $PIDFILE."
-    rm -f "$PIDFILE"
-  fi
-fi
-
-# Start Docker daemon in the background
-dockerd &
-DOCKER_PID=$!
-
-# Wait for Docker daemon to be available
-echo "Waiting for Docker daemon to start..."
-while ! docker info > /dev/null 2>&1; do
-  sleep 1
-done
-echo "Docker daemon started."
-
-# Start Celery worker in the background, logging to stdout
-celery -A src.worker.celery_app worker \
-  --loglevel=INFO \
-  -Q "${CELERY_BUILD_QUEUE_SYSBOX}" \
-  --logfile=/codelab/logs/sysbox_worker.log &
+# Start Celery worker in the background, logging to file
+celery -A src.worker.celery_app multi start 2 \
+    --loglevel=INFO \
+    --pidfile=/var/run/celery/%n.pid \
+    --logfile=/codelab/logs/%n.log \
+    -Q:1 "${CELERY_BUILD_QUEUE}" \
+    -Q "${CELERY_DEFAULT_QUEUE}" &
 CELERY_PID=$!
 
-
-# Define a cleanup function to terminate background processes
-cleanup() {
-  echo "Terminating Docker daemon (PID $DOCKER_PID) and Celery worker (PID $CELERY_PID)..."
-  kill $DOCKER_PID $CELERY_PID
-  wait
-}
-
-# Trap INT and TERM signals to ensure cleanup
-trap cleanup INT TERM
-
-# Wait until one of the processes exits
-wait -n
-
-# Once one exits, clean up the other
-cleanup
+# tail logs to keep the container running
+tail -f /codelab/logs/*.log

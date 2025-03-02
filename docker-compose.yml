@@ -22,7 +22,6 @@ services:
       prestart:
         condition: service_completed_successfully
     volumes: &common_volumes
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./codelab/src:/codelab/src
       - ./codelab/database:/codelab/database
       - ./codelab/logs:/codelab/logs
@@ -65,22 +64,9 @@ services:
     env_file:
       - .env
 
-  codelab-worker:
-    entrypoint: ["/bin/bash", "-c", "./celery_entry_point.sh"]
-    build:
-      context: ./codelab
-    depends_on:
-      redis:
-        condition: service_healthy
-      server:
-        condition: service_started
-    volumes: *common_volumes
-    environment: *common_env
-    env_file:
-      - .env
 
   codelab-worker-sysbox:
-    restart: always
+    restart: unless-stopped
     entrypoint: ["/bin/bash", "-c", "./sysbox_celery_worker_entry_point.sh"]
     build:
       context: ./codelab
@@ -90,13 +76,14 @@ services:
       server:
         condition: service_started
     runtime: sysbox-runc
-    shm_size: '3gb'
+    shm_size: '2gb'
     privileged: true
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - ./codelab/src:/codelab/src
       - ./codelab/database:/codelab/database
       - ./codelab/logs:/codelab/logs
-      # - /var/run/docker.sock:/var/run/docker.sock
       - ./codelab/sandbox_filesystem:/codelab/sandbox_filesystem
     environment: *common_env
     env_file:
