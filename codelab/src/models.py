@@ -316,6 +316,12 @@ class ExerciseSubmission(BaseModel, table=True):
     exercise_id: uuid.UUID = Field(foreign_key="exercise.id")
     exercise: Exercise = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
+    user_id: uuid.UUID | None = Field(foreign_key="user.id")
+    user: User = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+    group_id: uuid.UUID | None = Field(foreign_key="group.id")
+    group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
     status: TaskStatus = Field(default=TaskStatus.queued)
     results: list[DatabaseExecutionResult] | None = Field(
         default=None, sa_column=Column(JSON)

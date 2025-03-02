@@ -7,6 +7,7 @@ from sqlmodel import Session, col, func, select, update
 from src.core.dependecies import require_authenticated_vpl, require_db_session
 from src.models import (
     Exercise,
+    ExerciseSubmission,
     LanguageImage,
     Tasks,
     User,
@@ -15,6 +16,7 @@ from src.models import (
     Session as WorkflowSession,
 )
 from src.sandbox.schemas import (
+    CreateExcerciseExecutionSchema,
     CreateLanguageImageSchema,
     CreateTaskExecutionSchema,
     UpdateLanguageSchema,
@@ -183,12 +185,13 @@ def prune_all_language_images_service(
 
 
 def get_session_by_external_id_service(
+    _: Annotated[bool, Depends(require_authenticated_vpl)],
     db_session: Annotated[Session, Depends(require_db_session)],
-    external_id: Annotated[str, Path()],
+    session_external_id: Annotated[str, Path()],
 ) -> WorkflowSession:
     """Get a session by its external ID."""
     session = db_session.exec(
-        select(WorkflowSession).where(WorkflowSession.external_id == external_id)
+        select(WorkflowSession).where(WorkflowSession.external_id == session_external_id)
     ).first()
 
     if not session:
@@ -351,3 +354,58 @@ def cancle_queued_task_service(
 
     # TODO: Attempt to cancel the tasks celery process.
     return task
+
+
+def create_exercise_submission_serivce(
+    db_session: Annotated[Session, Depends(require_db_session)],
+    session: Annotated[WorkflowSession, Depends(get_session_by_external_id_service)],
+    submission_data: Annotated[CreateExcerciseExecutionSchema, Body()],
+) -> ExerciseSubmission:
+    """Create a new exercise submission."""
+
+    # get user by external_id
+    user = db_session.exec(
+        select(User).where(User.external_id == submission_data.external_user_id)
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # get excercise
+    excercise = db_session.exec(
+        select(Exercise).where(Exercise.external_id == submission_data.external_excercise_id)
+    ).first()
+
+    if not excercise:
+        raise HTTPException(status_code=404, detail="Excercise not found")
+
+    # create the submission
+    submission = ExerciseSubmission(
+        user_id=user.id,
+        exercise_id=excercise.id,
+        status=TaskStatus.queued,
+        entry_file_path=submission_data.entry_file_path,
+    )
+
+    db_session.add(submission)
+    db_session.commit()
+    db_session.refresh(submission)
+    # TODO: add task execution to queue
+    return submission
+
+
+def get_exercise_submission_by_id_service(
+    db_session: Annotated[Session, Depends(require_db_session)],
+    session: Annotated[WorkflowSession, Depends(get_session_by_external_id_service)],
+    submission_id: Annotated[UUID, Path()],
+) -> ExerciseSubmission:
+    """Get an exercise submission by its ID."""
+
+    submission = db_session.exec(
+        select(ExerciseSubmission).where(ExerciseSubmission.id == submission_id)
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
+    return submission

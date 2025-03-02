@@ -146,3 +146,10 @@ class CreateTaskExecutionSchema(BaseModel):
     external_user_id: str
     external_excercise_id: str
     entry_file_path: FilePath
+
+
+class CreateExcerciseExecutionSchema(BaseModel):
+    external_user_id: str
+    external_excercise_id: str
+    entry_file_path: FilePath
+

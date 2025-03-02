@@ -11,7 +11,7 @@ from src.worker import celery_app
 
 router = APIRouter()
 router.include_router(events_router, prefix="/events", tags=["events"])
-router.include_router(sandbox_routes, prefix="/sandbox", tags=["sandbox"])
+router.include_router(sandbox_routes, prefix="/sandbox")
 
 
 class HealthCheckResponse(BaseModel):
