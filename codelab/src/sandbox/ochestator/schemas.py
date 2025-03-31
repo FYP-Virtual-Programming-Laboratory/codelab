@@ -1,11 +1,11 @@
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt, PositiveFloat
 
 
 class ContainerConfig(BaseModel):
     """Configuration for container resource limits based on ulimits."""
 
-    cpu_time_limit_minutes: PositiveInt = Field(
-        default=5,  # 5 minutes
+    cpu_time_limit_minutes: PositiveFloat = Field(
+        default=5.0,  # 5 minutes
         description="Maximum CPU time in minutes a container can use (ulimit -t cpu).",
     )
 

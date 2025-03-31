@@ -129,6 +129,8 @@ class ImageBuilder:
             and self.language_image.test_build
         ):
             self.test()
+        elif (self.language_image.status == ImageStatus.build_succeeded):
+            self._update_status(ImageStatus.available)
 
     def __get_image_size(self, image: Image) -> str | None:
         # Check if image size is available

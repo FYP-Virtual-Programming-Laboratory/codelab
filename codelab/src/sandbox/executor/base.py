@@ -1,9 +1,12 @@
 import abc
+import shutil
 import time
+import os
 
 from docker.errors import APIError
 from docker.models.containers import Container
 
+from src.external.schemas import CodeRepository
 from src.log import logger
 from src.sandbox.ochestator.schemas import ContainerConfig, ExecutionResult
 from src.schemas import DatabaseExecutionResult
@@ -19,17 +22,51 @@ class BaseExecutor(abc.ABC):  # noqa
         mount_dir: str,
         container_config: ContainerConfig,
         retry_limit: int = 2,
+        code_repository: CodeRepository | None = None,
     ):
         """Construct executor to execute a task."""
         self.workdir = workdir
         self.mount_dir = mount_dir
         self.container_config = container_config
-        self.container = self._get_container()
         self.retry_limit = retry_limit
+        self.code_repository = code_repository
+        self.container = self._get_container()
 
     @abc.abstractmethod
     def _get_container() -> Container:
         """Get a Container to use for execution."""
+
+    def _assert_code_repository(self) -> None:
+        """Assert that a CodeRepository is provided."""
+        if self.code_repository is None:
+            raise ValueError("CodeRepository is required for execution.")
+
+    def __write_repository(self, repo: CodeRepository, base_path: str) -> None:
+        """Recursively write repository contents to disk."""
+        # Create the full path including the repo path
+        path  = os.path.join(base_path, repo.path)
+
+        os.makedirs(os.path.dirname(path), exist_ok=True, mode=0o777)
+
+        if repo.content  is not None:
+            # Write file content
+            with open(path, "w") as f:
+                f.write(repo.content)
+
+        # Recursively process sub-repositories
+        for sub_repo in repo.sub:
+            self.__write_repository(sub_repo, path)
+
+    def _mount_code_repository(self) -> None:
+        """Add content of the code repository to the container."""
+        self._assert_code_repository()
+
+        # delete the mount directory if it already exists
+        if os.path.exists(self.mount_dir):
+            shutil.rmtree(self.mount_dir)
+
+        # Write all repository contents to the mount directory
+        self.__write_repository(self.code_repository, self.mount_dir)
 
     def execute_commnd(self, command: str, workdir: str) -> ExecutionResult:
         """Execute a command and return the exit status and output."""
@@ -87,22 +124,27 @@ class BaseExecutor(abc.ABC):  # noqa
     ) -> DatabaseExecutionResult:
         """Run task executor."""
 
-        # first start the container
-        self.container.start()
-
-        while self.container.status != "running":
-            logger.info(
-                f"Waiting for container to start: status is {self.container.status}"
-            )
-            time.sleep(0.5)
-            self.container.reload()
-
         # Record start time before command execution
         start_time = time.time()
-        # Execute the command in the container
+
         try:
+            # first start the container
+            self.container.start()
+
+            while self.container.status != "running":
+                logger.info(
+                    'src::sandbox::executor::base::BaseExecutor::run:: '
+                    f"Waiting for container to start: status is {self.container.status}"
+                )
+                time.sleep(0.5)
+                self.container.reload()
+            
+            # Reset start time before command execution
+            start_time = time.time()
+
+            # Execute the command in the container
             with raise_timeout(
-                timeout=(self.container_config.cpu_time_limit_minutes * 60)
+                timeout=int(self.container_config.cpu_time_limit_minutes * 60)
             ):
                 # Wait for the container to exit
                 command = command if not std_in else f"{command} <<< {std_in}"
@@ -113,6 +155,7 @@ class BaseExecutor(abc.ABC):  # noqa
             if execution_result.server_error and retry < self.retry_limit:
                 # stop the container and retry
                 logger.debug(
+                    'src::sandbox::executor::base::BaseExecutor::run:: '
                     f"Server Error occured during execution: `{command}`:\nERROR\n:`{execution_result.std_err}`"
                 )
 
@@ -138,13 +181,13 @@ class BaseExecutor(abc.ABC):  # noqa
                 if is_compilation
                 else None,
             )
-
         except TimeOutException:
             end_time = time.time()
             expended_time = end_time - start_time
             logger.debug(
+                'src::sandbox::executor::base::BaseExecutor::run:: '
                 f"Execution timed out for task:\n"
-                f"Execution took: {expended_time} with TTL: {self.container_config.cpu_time_limit_seconds}"
+                f"Execution took: {expended_time} with TTL: {self.container_config.cpu_time_limit_minutes}"
             )
 
             if remove_container:
@@ -160,3 +203,17 @@ class BaseExecutor(abc.ABC):  # noqa
                 failed_execution=True,
                 failed_compilation=True if is_compilation else None,
             )
+
+        except (Exception, APIError) as error:
+            logger.error(
+                'src::sandbox::executor::base::BaseExecutor::run:: '
+                f'An error occured in docker server error: {error}',
+                extra={
+                    'error': str(error),
+                    'command': command,
+                    'std_in': std_in,
+                    'start_time': start_time,
+                    'end_time': time.time()
+                },
+            )
+            raise error 

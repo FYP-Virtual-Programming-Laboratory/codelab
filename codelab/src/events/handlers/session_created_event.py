@@ -9,6 +9,7 @@ from src.events.schemas import (
 )
 from src.models import Exercise, Group, Session, SessionConfig, TestCase, User
 from src.sandbox.tasks import prune_all_containers_task
+import uuid
 
 
 class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):

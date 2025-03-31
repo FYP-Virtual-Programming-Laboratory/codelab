@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import uuid
 from datetime import datetime
 
@@ -144,7 +142,7 @@ class Session(BaseModel, table=True):
     language_image: LanguageImage = Relationship(
         sa_relationship_kwargs={"lazy": "select"}
     )
-    configuration: SessionConfig = Relationship(
+    configuration: 'SessionConfig' = Relationship(
         back_populates="session", sa_relationship_kwargs={"lazy": "select"}
     )
 
@@ -173,7 +171,7 @@ class SessionConfig(BaseModel, table=True):
     )
 
     cpu_time_limit: PositiveInt = Field(
-        default=2,
+        default=10,
         description="The maximum number of CPU seconds allowed for a student to run a program.",
     )
 
@@ -185,16 +183,6 @@ class SessionConfig(BaseModel, table=True):
     max_processes_and_or_threads: PositiveInt = Field(
         default=10,
         description="The maximum number of processes or threads allowed for a student program to create.",
-    )
-
-    max_file_size: PositiveInt = Field(
-        default=1024 * 1024 * 10,  # 10MB
-        description="The maximum number of KB allowed for a student to upload for their program.",
-    )
-
-    max_stdin_size: PositiveInt = Field(
-        default=1024 * 10,  # 10KB
-        description="The maximum number of KB allowed for a student to upload as input for their program.",
     )
 
     enable_network: bool = Field(
@@ -220,7 +208,7 @@ class User(BaseModel, table=True):
     session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
     group_id: uuid.UUID | None = Field(foreign_key="group.id", nullable=True)
-    group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    group: 'Group' = Relationship(sa_relationship_kwargs={"lazy": "select"})
 
 
 class Group(BaseModel, table=True):
@@ -253,6 +241,10 @@ class Exercise(BaseModel, table=True):
     external_id: str = Field(index=True)
     session_id: uuid.UUID = Field(foreign_key="session.id")
     session: Session = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    test_cases: list['TestCase'] = Relationship(
+        back_populates='exercise',
+        sa_relationship_kwargs={"lazy": "select"},
+    )
 
 
 class TestCase(BaseModel, table=True):
@@ -266,7 +258,10 @@ class TestCase(BaseModel, table=True):
 
     external_id: str = Field(index=True)
     exercise_id: uuid.UUID = Field(foreign_key="exercise.id")
-    exercise: Exercise = Relationship(sa_relationship_kwargs={"lazy": "select"})
+    exercise: Exercise = Relationship(
+        back_populates='test_cases',
+        sa_relationship_kwargs={"lazy": "select"},
+    )
     test_input: str
     visible: bool
 
@@ -291,6 +286,8 @@ class Tasks(BaseModel, table=True):
 
     group_id: uuid.UUID | None = Field(foreign_key="group.id")
     group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+    execution_logs: list[JsonValue] = Field(default_factory=list, sa_column=Column(JSON))
 
     status: TaskStatus = Field(default=TaskStatus.queued)
     results: list[DatabaseExecutionResult] | None = Field(
@@ -321,6 +318,8 @@ class ExerciseSubmission(BaseModel, table=True):
 
     group_id: uuid.UUID | None = Field(foreign_key="group.id")
     group: Group = Relationship(sa_relationship_kwargs={"lazy": "select"})
+
+    execution_logs: list[JsonValue] = Field(default_factory=list, sa_column=Column(JSON))
 
     status: TaskStatus = Field(default=TaskStatus.queued)
     results: list[DatabaseExecutionResult] | None = Field(

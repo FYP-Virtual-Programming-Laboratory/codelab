@@ -1,13 +1,15 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import (
     AfterValidator,
     BaseModel,
     FilePath,
+    NewPath,
     JsonValue,
     model_validator,
+    field_serializer,
 )
 from typing_extensions import Self
 
@@ -145,11 +147,29 @@ class LanguageImagePublicShcema(BaseModel):
 class CreateTaskExecutionSchema(BaseModel):
     external_user_id: str
     external_excercise_id: str
-    entry_file_path: FilePath
+    entry_file_path: NewPath
 
 
 class CreateExcerciseExecutionSchema(BaseModel):
-    external_user_id: str
+    external_user_id: str | None = None
+    external_group_id: str | None = None
     external_excercise_id: str
-    entry_file_path: FilePath
+    entry_file_path: NewPath
+    
+    @model_validator(mode="after")
+    def validate_group_id_or_user_id(self) -> Self:
+        """Check that either group_id or user_id was supplied."""
+        
+        if not (self.external_user_id or self.external_group_id):
+            raise ValueError('external_user_id or external_group_id required for excersise submission')
 
+        return self
+
+
+class ExecutionLogSchema(BaseModel):
+    timestamp: datetime
+    message: str
+    
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, timestamp: datetime, _info: Any) -> str:
+        return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")

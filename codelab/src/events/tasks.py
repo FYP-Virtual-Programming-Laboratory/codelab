@@ -43,4 +43,4 @@ def lifecycle_event_handler_task(serialized_event_data: Any) -> None:
             "src:events:tasks:lifecycle_event_handler_task:: Failed to handle event",
             extra={"serialized_event_data": serialized_event_data, "error": str(error)},
         )
-        return
+        raise error

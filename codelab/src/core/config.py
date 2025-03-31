@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     SUBMISSION_DIR: str
     TESTING_DIR: str
     FILESYSTEM_DIR: str
+    
+    CODE_COLLAB_SERVICE_BASE_URL: str
+    CODE_COLLAB_SERVICE_API_KEY: str
+    CODE_COLLAB_SERVICE_TIMEOUT: float = 5
 
     # 60 minutes * 24 hours * 8 days = 8 days
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
@@ -70,8 +74,7 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379"
     CELERY_DEFAULT_QUEUE: str
-    CELERY_BUILD_QUEUE: str
-    CELERY_BUILD_QUEUE: str
+    CELERY_EXECUTION_QUEUE: str
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":

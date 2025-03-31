@@ -1,8 +1,8 @@
 """First migration
 
-Revision ID: a3477c78e228
+Revision ID: fae088abed39
 Revises: 
-Create Date: 2025-03-02 21:32:19.356987
+Create Date: 2025-03-31 18:37:53.221687
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
-revision = 'a3477c78e228'
+revision = 'fae088abed39'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -91,8 +91,6 @@ def upgrade():
     sa.Column('cpu_time_limit', sa.Integer(), nullable=False),
     sa.Column('memory_limit', sa.Integer(), nullable=False),
     sa.Column('max_processes_and_or_threads', sa.Integer(), nullable=False),
-    sa.Column('max_file_size', sa.Integer(), nullable=False),
-    sa.Column('max_stdin_size', sa.Integer(), nullable=False),
     sa.Column('enable_network', sa.Boolean(), nullable=False),
     sa.ForeignKeyConstraint(['session_id'], ['session.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -148,6 +146,7 @@ def upgrade():
     sa.Column('exercise_id', sa.Uuid(), nullable=False),
     sa.Column('user_id', sa.Uuid(), nullable=True),
     sa.Column('group_id', sa.Uuid(), nullable=True),
+    sa.Column('execution_logs', sa.JSON(), nullable=True),
     sa.Column('status', sa.Enum('queued', 'executing', 'executed', 'dropped', 'cancelled', name='taskstatus'), nullable=False),
     sa.Column('results', sa.JSON(), nullable=True),
     sa.ForeignKeyConstraint(['exercise_id'], ['exercise.id'], ),

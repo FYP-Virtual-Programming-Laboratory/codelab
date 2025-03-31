@@ -15,17 +15,19 @@ from src.sandbox.types import CONTAINER_LABEL
 
 class ContainerBuilderErrors(Exception):
     def __init__(self, exit_code: int, error_message: str):
+        super().__init__(exit_code, error_message)
         self.exit_code = exit_code
         self.error_message = error_message
 
 
 class ContainerBuildFailed(ContainerBuilderErrors):
     """Container build failed."""
+    pass
 
 
 class ContainerNotFound(ContainerBuilderErrors):
     """Container not found."""
-
+    pass
 
 class ContainerBuilder:
     def __init__(

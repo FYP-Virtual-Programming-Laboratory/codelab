@@ -8,19 +8,23 @@ from sqlmodel import Session, col, select
 from src.core.config import settings
 from src.core.db import engine
 from src.core.docker import get_shared_docker_client
+from src.external.exceptions import PullRepositoryException
 from src.log import logger
-from src.models import LanguageImage
+from src.models import ExerciseSubmission, LanguageImage, Tasks
 from src.models import Session as WorkflowSession
+from src.sandbox.manager import ExecutionFailedError, ResourceManager
 from src.sandbox.ochestator.image import ImageBuilder
+from src.sandbox.schemas import ExecutionLogSchema
 from src.sandbox.types import CONTAINER_LABEL
-from src.schemas import ImageStatus
+from src.schemas import ImageStatus, TaskStatus
 from src.utils import CeleryHelper
 from src.worker import celery_app
+from src.external.utils import pull_excercise_repository
 
 
 @celery_app.task(
     name="build_language_image_task",
-    queue=settings.CELERY_BUILD_QUEUE,
+    queue=settings.CELERY_EXECUTION_QUEUE,
 )
 def build_language_image_task(image_id: UUID) -> None:
     """Build a language image."""
@@ -161,3 +165,136 @@ def prune_all_containers_task(lable: CONTAINER_LABEL | None = None) -> None:
             container.remove(force=True, v=True)
     except DockerException as error:
         logger.exception("Unable to prune Docker containers. %s", error)
+
+
+def _update_execution_log(
+    db_session: Session, 
+    request: Tasks | ExerciseSubmission,
+    message: str,
+) -> None:
+    """Update task execution log."""
+    execution_logs = list(request.execution_logs)
+    execution_logs.append(
+        ExecutionLogSchema(
+            timestamp=str(datetime.now()), message=message
+        ).model_dump()        
+    )
+    request.execution_logs = execution_logs
+    db_session.add(request)
+    db_session.commit()
+    db_session.refresh(request)
+
+
+@celery_app.task(
+    name="program_execution_queue",
+    queue=settings.CELERY_EXECUTION_QUEUE,
+)
+def program_execution_queue(
+    task_id: UUID | None = None, 
+    submission_id: UUID | None = None
+) -> None:
+    """Execute a queued program execution request."""
+
+    with Session(engine) as db_session:
+        request: Tasks | ExerciseSubmission | None = None
+        
+        if task_id:
+            request = db_session.exec(
+                select(Tasks).where(Tasks.id == task_id, Tasks.status == TaskStatus.queued)
+            ).first()
+        
+        elif submission_id:
+            request = db_session.exec(
+                select(ExerciseSubmission).where(
+                    ExerciseSubmission.id == submission_id, 
+                    ExerciseSubmission.status == TaskStatus.queued,
+                )
+            ).first() 
+
+        if not request:
+            logger.error(
+                "src::sandbox:tasks::program_execution_queue:: "
+                "Program execution Request not found or is no longer in queue.",
+                extra={
+                    'task_id': str(task_id),
+                    'submission_id': str(submission_id),
+                }
+            )
+            return
+
+        # set task status to executing
+        request.status = TaskStatus.executing
+        _update_execution_log(
+            db_session=db_session,
+            request=request,
+            message='Execution started.',
+        )
+
+        try:
+            # pull code repository from codecollab repository
+            # set execution log to pulling code repository
+            _update_execution_log(
+                db_session=db_session,
+                request=request,
+                message='Pulling code repository.',
+            )
+            code_repository = pull_excercise_repository(
+                request.exercise_id, 
+                request.exercise.session_id,
+            )
+            _update_execution_log(
+                db_session=db_session,
+                request=request,
+                message='Repository pulled successfully.',
+            )
+        except PullRepositoryException as error:
+            logger.exception(
+                "src::sandbox:tasks::program_execution_queue:: "
+                "Repository pull failed.",
+                extra={
+                    'task_id': str(task_id),
+                    'submission_id': str(submission_id),
+                    "session_id": str(request.exercise.session_id),
+                    "error_message": error.message,
+                }
+            )
+
+            request.status = TaskStatus.dropped
+            _update_execution_log(
+                request=request,
+                db_session=db_session,
+                message='Service error. Aboriting, failed to pull code repository.',
+            )
+            return
+
+        _update_execution_log(
+            request=request,
+            db_session=db_session,
+            message='Executing program.',
+        )
+
+        try:
+            manager = ResourceManager()
+            execution_result = manager.execute(
+                request=request,
+                code_repository=code_repository, 
+            )
+
+            request.results = [
+                result.model_dump()
+                for result in execution_result
+            ]
+            request.status = TaskStatus.executed
+            _update_execution_log(
+                db_session=db_session,
+                request=request,
+                message='Execution completed.',
+            )
+        except ExecutionFailedError as error:
+            request.status = TaskStatus.dropped
+            _update_execution_log(
+                request=request,
+                db_session=db_session,
+                message=f'Service error: Aborting, failed to execute program. {error}',
+            )
+

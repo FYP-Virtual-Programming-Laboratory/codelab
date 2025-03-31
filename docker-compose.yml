@@ -42,7 +42,7 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CELERY_DEFAULT_QUEUE=${CELERY_DEFAULT_QUEUE?Variable not set}
-      - CELERY_BUILD_QUEUE=${CELERY_BUILD_QUEUE?Variable not set}
+      - CELERY_EXECUTION_QUEUE=${CELERY_EXECUTION_QUEUE?Variable not set}
       - EXTERNAL_API_KEY=${EXTERNAL_API_KEY}
 
     healthcheck:
@@ -63,7 +63,6 @@ services:
     environment: *common_env
     env_file:
       - .env
-
 
   codelab-worker-sysbox:
     restart: unless-stopped

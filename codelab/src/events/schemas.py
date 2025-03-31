@@ -1,9 +1,13 @@
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt, model_validator
+from src.models import LanguageImage
+from src.schemas import ImageStatus
 from typing_extensions import Self
-
 from src.events.enums import LifeCycleEvent
+from sqlmodel import Session as DbSession, select
+from src.core.db import engine
 
 
 class TestCaseCreationSchema(BaseModel):
@@ -57,16 +61,6 @@ class SessionConfigurationCreationSchema(BaseModel):
         description="The maximum number of processes or threads allowed for a student program to create.",
     )
 
-    max_file_size: PositiveInt = Field(
-        default=1024 * 1024 * 10,  # 10MB
-        description="The maximum number of KB allowed for a student to upload for their program.",
-    )
-
-    max_stdin_size: PositiveInt = Field(
-        default=1024 * 10,  # 10KB
-        description="The maximum number of KB allowed for a student to upload as input for their program.",
-    )
-
     enable_network: bool = Field(
         default=False,
         description="Whether to allow network access for a student program.",
@@ -78,7 +72,7 @@ class SessionCreationEventData(BaseModel):
     groups: list[GroupCreationSchema] | None = None
     students: list[UserCreationSchema] | None = None
     session_config: SessionConfigurationCreationSchema | None = None
-    language_image_id: str
+    language_image_id: UUID
 
     @model_validator(mode="after")
     def check_students_or_groups_set(self) -> Self:
@@ -91,6 +85,22 @@ class SessionCreationEventData(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def check_language_image_id(self) -> Self:
+        """Check that language image exisits and is available."""
+        with DbSession(engine) as db_session:
+            image = db_session.exec(select(LanguageImage).where(
+                LanguageImage.id == self.language_image_id)
+            ).first()
+            
+            if not image:
+                raise ValueError("Language Image not found.")
+            
+            if image.status != ImageStatus.available:
+                raise ValueError("Language image is not available.")
+            
+        return self
+
 
 class UserJoinEventData(BaseModel):
     user_external_id: str
@@ -99,9 +109,7 @@ class UserJoinEventData(BaseModel):
 class LifeCycleEventData(BaseModel):
     event: LifeCycleEvent
     external_session_id: str
-    event_data: SessionCreationEventData | UserJoinEventData | dict[
-        str, Any
-    ] | None = Field(default=None)
+    event_data: SessionCreationEventData | UserJoinEventData | None = Field(default=None)
 
     @model_validator(mode="after")
     def validate_event_data(self) -> Self:

@@ -8,6 +8,7 @@ from src.core.dependecies import require_authenticated_vpl, require_db_session
 from src.models import (
     Exercise,
     ExerciseSubmission,
+    Group,
     LanguageImage,
     Tasks,
     User,
@@ -21,7 +22,7 @@ from src.sandbox.schemas import (
     CreateTaskExecutionSchema,
     UpdateLanguageSchema,
 )
-from src.sandbox.tasks import build_language_image_task
+from src.sandbox.tasks import build_language_image_task, program_execution_queue
 from src.schemas import ImageStatus, TaskStatus
 from src.utils import CeleryHelper
 
@@ -197,6 +198,7 @@ def get_session_by_external_id_service(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    return session
 
 def get_active_session_by_external_id_service(
     _: Annotated[bool, Depends(require_authenticated_vpl)],
@@ -297,20 +299,27 @@ def create_task_execution_service(
     if not excercise:
         raise HTTPException(status_code=404, detail="Excercise not found")
 
-    # check if the user has exceeded their task excution threshold for this session
+    # check if the user has exceeded their task execution threshold for this session
+    # we only count tasks that are in queue or where successfully executed
     if (
-        db_session.exec(
-            select(func.count(col(Tasks.id))).where(Tasks.user_id == user.id)
-        ).first()
-        or 0 >= session.configuration.max_number_of_runs
+        (db_session.exec(
+            select(func.count(col(Tasks.id))).where(
+                Tasks.user_id == user.id,
+                col(Tasks.status).in_(
+                    [
+                        TaskStatus.executing,
+                        TaskStatus.queued,
+                    ]
+                )
+            )
+        ).first() or 0) >= session.configuration.max_number_of_runs
     ):
         raise HTTPException(
             status_code=400,
             detail="User has exceeded their task execution threshold for this session",
         )
 
-    # check if the user has exceeded their daily task excution threshold
-    # first check that the user does not have a task in execution or pending
+    # check that the user does not have a task currently executing or pending
     if db_session.exec(
         select(Tasks).where(
             col(Tasks.user_id) == user.id,
@@ -332,13 +341,22 @@ def create_task_execution_service(
         status=TaskStatus.queued,
         user_id=user.id,
         exercise_id=excercise.id,
+        entry_file_path=str(task_data.entry_file_path),
     )
+
+    # wait a bit for the request to be done before sening the task to the queue
+    celery_result = program_execution_queue.apply_async(
+        countdown=10,
+        kwargs={'task_id': task.id},
+    )
+
+    if celery_result:
+        task.celery_task_id = celery_result.id
 
     db_session.add(task)
     db_session.commit()
     db_session.refresh(task)
 
-    # TODO: add task execution to queue
     return task
 
 
@@ -362,14 +380,32 @@ def create_exercise_submission_serivce(
     submission_data: Annotated[CreateExcerciseExecutionSchema, Body()],
 ) -> ExerciseSubmission:
     """Create a new exercise submission."""
+    user: User | None = None
+    group: Group | None = None
 
-    # get user by external_id
-    user = db_session.exec(
-        select(User).where(User.external_id == submission_data.external_user_id)
-    ).first()
+    if submission_data.external_user_id:
+        # get user by external_id
+        user = db_session.exec(
+            select(User).where(User.external_id == submission_data.external_user_id)
+        ).first()
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+    elif submission_data.external_group_id:
+        group = db_session.exec(
+            select(Group).where(
+                Group.external_id == submission_data.external_group_id)
+        ).first()
+
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+    else:
+        # should not happen as we already validated this in the schema
+        raise HTTPException(
+            status_code=400, 
+            detail="external_group_id or external_user_id required."
+        )
 
     # get excercise
     excercise = db_session.exec(
@@ -377,20 +413,37 @@ def create_exercise_submission_serivce(
     ).first()
 
     if not excercise:
-        raise HTTPException(status_code=404, detail="Excercise not found")
+        raise HTTPException(status_code=404, detail="Excercise not found.")
+
+    # check that we dont have a queued exercise submission from this group / user
+    if db_session.exec(
+        select(ExerciseSubmission).where(
+            ExerciseSubmission.group_id == (group.id if group else None),
+            ExerciseSubmission.user_id == (user.id if user else None),
+            ExerciseSubmission.status == TaskStatus.queued,
+        )
+    ).first():
+        raise HTTPException(
+            status_code=400, 
+            detail="ExerciseSubmission for user or group already in queue."
+        )
 
     # create the submission
     submission = ExerciseSubmission(
-        user_id=user.id,
+        user_id=user.id if user else None,
+        group_id=group.id if group else None,
         exercise_id=excercise.id,
         status=TaskStatus.queued,
-        entry_file_path=submission_data.entry_file_path,
+        entry_file_path=str(submission_data.entry_file_path),
     )
 
     db_session.add(submission)
     db_session.commit()
     db_session.refresh(submission)
-    # TODO: add task execution to queue
+
+    # send execercise submission into queue to be executed
+    program_execution_queue.delay(submission_id=submission.id)
+
     return submission
 
 

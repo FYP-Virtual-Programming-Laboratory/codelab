@@ -1,5 +1,6 @@
 from docker.models.containers import Container
 
+from src.external.schemas import CodeRepository
 from src.models import ExerciseSubmission
 from src.sandbox.executor.base import BaseExecutor
 from src.sandbox.ochestator.container import ContainerBuilder
@@ -13,6 +14,7 @@ class SubmissionExecutor(BaseExecutor):
         mount_dir: str,
         submission: ExerciseSubmission,
         container_config: ContainerConfig,
+        code_repository: CodeRepository,
         retry_limit: int = 2,
     ):
         """Construct executor to execute a task."""
@@ -22,6 +24,7 @@ class SubmissionExecutor(BaseExecutor):
             mount_dir=mount_dir,
             container_config=container_config,
             retry_limit=retry_limit,
+            code_repository=code_repository,
         )
 
     def _get_container(self) -> Container:
@@ -31,18 +34,20 @@ class SubmissionExecutor(BaseExecutor):
 
         if self.submission.user:
             # Get user's container
-            container_id = self.submission.user.docker_container_id
+            container_id = f'submission-{self.submission.user.docker_container_id}'
             language_image = self.submission.user.session.language_image
 
         if self.submission.group:
-            # Get a default container
-            container_id = self.submission.group.docker_container_id
+            # Get group container
+            container_id = f'submission-{self.submission.group.docker_container_id}'
             language_image = self.submission.user.session.language_image
 
         if not container_id or not language_image:
             raise ValueError(
                 "Container or language image should not be NULL at this point."
             )
+
+        self._mount_code_repository()
 
         return ContainerBuilder(
             language_image=language_image,
