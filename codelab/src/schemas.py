@@ -4,6 +4,28 @@ from typing import Literal
 from pydantic import BaseModel, Field, PositiveFloat
 
 
+class SessionStatus(StrEnum):
+    creating = "creating"
+    created = "created"
+    ongoing = "ongoing"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class SessionEnrollmentMethod(StrEnum):
+    link = "link"
+    bulk_upload = "bulk_upload"
+    manual_invite = "manual_invite"
+
+
+class SessionInitializationStage(StrEnum):
+    content_configuration = "content_configuration"
+    collaboration_configuration = "collaboration_configuration"
+    resource_configuration = "resource_configuration"
+    enrollment = "enrollment"
+    confirmation = "confirmation"
+
+
 class ImageStatus(StrEnum):
     created = "created"
     building = "building"
@@ -28,7 +50,7 @@ class TaskStatus(StrEnum):
 
 
 class DatabaseExecutionResult(BaseModel):
-    testcase_external_id: str | None = Field(default=None)
+    test_case_id: str
     std_in: str | None = Field(default=None)
     exit_code: int
     expended_time: PositiveFloat
@@ -44,3 +66,9 @@ class DatabaseExecutionResult(BaseModel):
     ]
     failed_execution: bool
     failed_compilation: bool | None = Field(default=None)
+
+
+class EvaluationFlag(StrEnum):
+    execution = "execution"
+    compilation = "compilation"
+    code_quality = "code_quality"

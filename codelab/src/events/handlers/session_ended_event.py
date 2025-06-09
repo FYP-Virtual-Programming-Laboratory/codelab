@@ -3,7 +3,7 @@ from typing import Any
 from sqlmodel import col, update
 
 from src.events.handlers.base import AbstractLifeCycleEventHandler
-from src.models import Session, Tasks
+from src.models import Session, Task
 from src.sandbox.tasks import prune_all_containers_task
 from src.schemas import TaskStatus
 
@@ -26,10 +26,10 @@ class SessionEndedEventHandler(AbstractLifeCycleEventHandler):
         )
         self.db_session.commit()
 
-        # mark all active / running user tasks as dropped
+        # mark all active / running student tasks as dropped
         self.db_session.exec(
-            update(Tasks)
-            .where(col(Tasks.status).in_(TaskStatus.queued, TaskStatus.executing))
+            update(Task)
+            .where(col(Task.status).in_(TaskStatus.queued, TaskStatus.executing))
             .values(task_status=TaskStatus.dropped)
         )
 

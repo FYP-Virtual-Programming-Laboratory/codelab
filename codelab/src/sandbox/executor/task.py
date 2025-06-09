@@ -1,7 +1,7 @@
 from docker.models.containers import Container
 
 from src.external.schemas import CodeRepository
-from src.models import Tasks
+from src.models import Task
 from src.sandbox.executor.base import BaseExecutor
 from src.sandbox.ochestator.container import ContainerBuilder
 from src.sandbox.ochestator.schemas import ContainerConfig
@@ -10,7 +10,7 @@ from src.sandbox.ochestator.schemas import ContainerConfig
 class TaskExecutor(BaseExecutor):
     def __init__(
         self,
-        task: Tasks,
+        task: Task,
         workdir: str,
         mount_dir: str,
         container_config: ContainerConfig,
@@ -31,19 +31,18 @@ class TaskExecutor(BaseExecutor):
         """Get a Container for the task."""
 
         container_id = None
+        language_image = self.task.exercise.session.language_image
 
-        if self.task.user:
-            # Get user's container
-            container_id = self.task.user.docker_container_id
-            language_image = self.task.user.session.language_image
+        if self.task.student:
+            # Get student's container
+            container_id = self.task.student.docker_container_id
 
         if self.task.group:
-            # Get a default container
+            # Get group container
             container_id = self.task.group.docker_container_id
-            language_image = self.task.group.session.language_image
 
-        if not language_image:
-            raise ValueError("Language image should be NULL at this point.")
+        if not container_id:
+            raise ValueError("Container id should not be NULL at this point.")
 
         self._mount_code_repository()
 

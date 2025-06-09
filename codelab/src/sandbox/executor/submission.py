@@ -31,21 +31,18 @@ class SubmissionExecutor(BaseExecutor):
         """Get a Container for the task."""
 
         container_id = None
+        language_image = self.submission.exercise.session.language_image
 
-        if self.submission.user:
-            # Get user's container
-            container_id = f'submission-{self.submission.user.docker_container_id}'
-            language_image = self.submission.user.session.language_image
+        if self.submission.student:
+            # Get student's container
+            container_id = f'submission-{self.submission.student.docker_container_id}'
 
         if self.submission.group:
             # Get group container
             container_id = f'submission-{self.submission.group.docker_container_id}'
-            language_image = self.submission.user.session.language_image
 
-        if not container_id or not language_image:
-            raise ValueError(
-                "Container or language image should not be NULL at this point."
-            )
+        if not container_id:
+            raise ValueError("Container id should not be NULL at this point.")
 
         self._mount_code_repository()
 

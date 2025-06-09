@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     EXTERNAL_API_KEY: str = secrets.token_urlsafe(32)
     VPL_API_KEY: str = secrets.token_urlsafe(32)
+    VPL_FRONTEND_BASE_URL: str = "http://localhost:3000"
 
     SUBMISSION_DIR: str
     TESTING_DIR: str

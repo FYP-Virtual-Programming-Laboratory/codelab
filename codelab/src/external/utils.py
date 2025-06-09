@@ -1,7 +1,4 @@
-from fastapi import HTTPException, status
-from src.external.dependencies import get_code_collab_connector
 from src.external.schemas import CodeRepository
-from src.external.exceptions import PullRepositoryException
 
 
 main_content = """
@@ -38,7 +35,7 @@ def pull_excercise_repository(
 ) -> CodeRepository:
     """Pull the excercise repository from the code collaboration service."""
 
-    # note for now let's just return a dummy repository
+    # NOTE: for now let's just return a dummy repository
     return CodeRepository(
         path="",
         content=None,

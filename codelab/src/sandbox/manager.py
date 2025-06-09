@@ -1,6 +1,6 @@
 import os
 from src.external.schemas import CodeRepository
-from src.models import ExerciseSubmission, Tasks, TestCase
+from src.models import ExerciseSubmission, Task, TestCase
 from src.sandbox.executor.task import TaskExecutor
 from src.sandbox.executor.submission import SubmissionExecutor
 from src.sandbox.executor.base import BaseExecutor
@@ -104,7 +104,7 @@ class ResourceManager:
                 return [
                     DatabaseExecutionResult(
                         **result.model_dump(),
-                        testcase_external_id=test_case.external_id,
+                        test_case_id=test_case.id,
                     )
                     for test_case in available_test_cases
                 ] if available_test_cases else [
@@ -123,8 +123,8 @@ class ResourceManager:
                             **executor.run(
                                 command=execution_command,
                                 std_in=test_case.test_input,
-                            ).model_dump(exclude=['testcase_external_id']),
-                            testcase_external_id=test_case.external_id,
+                            ).model_dump(exclude=['test_case_id']),
+                            test_case_id=test_case.id,
                         )
                     )
             else:
@@ -140,7 +140,7 @@ class ResourceManager:
 
     def _execute_task(
         self, 
-        task: Tasks, 
+        task: Task, 
         code_repository: CodeRepository
     ) -> list[DatabaseExecutionResult]:
         """Execute a task."""
@@ -155,7 +155,7 @@ class ResourceManager:
         ]
 
         session_id = str(session.id)
-        executor_id =  str(task.user_id if task.user_id else task.group_id)
+        executor_id =  str(task.student_id if task.student_id else task.group_id)
         try:
             executor = TaskExecutor(
                 task=task,
@@ -195,9 +195,8 @@ class ResourceManager:
         available_test_cases = submission.exercise.test_cases
 
         session_id = str(session.id)
-        executor_id =  str(submission.user_id if submission.user_id else submission.group_id)
+        executor_id =  str(submission.student_id if submission.student_id else submission.group_id)
         try:
-            print(os.path.join(settings.SUBMISSION_DIR, session_id, executor_id))
             executor = SubmissionExecutor(
                 submission=submission,
                 workdir=f"/{executor_id}",
@@ -226,11 +225,11 @@ class ResourceManager:
     def execute(
         self, 
         code_repository: CodeRepository,
-        request: Tasks | ExerciseSubmission, 
+        request: Task | ExerciseSubmission, 
     ) -> list[DatabaseExecutionResult]:
         """Execute a given task or exercise submission."""
         
-        if isinstance(request, Tasks):
+        if isinstance(request, Task):
             print('EXECUTING AS TASK')
             return self._execute_task(request, code_repository=code_repository)
 

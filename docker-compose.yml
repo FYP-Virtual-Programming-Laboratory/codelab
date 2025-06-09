@@ -51,6 +51,23 @@ services:
       timeout: 5s
       retries: 5
 
+  frontend:
+    image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/frontend
+      - /frontend/node_modules
+      - /frontend/.next
+    environment:
+      - NODE_ENV=development
+    command: pnpm dev
+    depends_on:
+      server:
+        condition: service_started
+
   prestart:
     image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
     build:
@@ -79,11 +96,7 @@ services:
     privileged: true
     security_opt:
       - seccomp:unconfined
-    volumes:
-      - ./codelab/src:/codelab/src
-      - ./codelab/database:/codelab/database
-      - ./codelab/logs:/codelab/logs
-      - ./codelab/sandbox_filesystem:/codelab/sandbox_filesystem
+    volumes: *common_volumes
     environment: *common_env
     env_file:
       - .env

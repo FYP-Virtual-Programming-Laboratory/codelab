@@ -10,7 +10,7 @@ from src.core.db import engine
 from src.core.docker import get_shared_docker_client
 from src.external.exceptions import PullRepositoryException
 from src.log import logger
-from src.models import ExerciseSubmission, LanguageImage, Tasks
+from src.models import ExerciseSubmission, LanguageImage, Task
 from src.models import Session as WorkflowSession
 from src.sandbox.manager import ExecutionFailedError, ResourceManager
 from src.sandbox.ochestator.image import ImageBuilder
@@ -169,7 +169,7 @@ def prune_all_containers_task(lable: CONTAINER_LABEL | None = None) -> None:
 
 def _update_execution_log(
     db_session: Session, 
-    request: Tasks | ExerciseSubmission,
+    request: Task | ExerciseSubmission,
     message: str,
 ) -> None:
     """Update task execution log."""
@@ -193,14 +193,16 @@ def program_execution_queue(
     task_id: UUID | None = None, 
     submission_id: UUID | None = None
 ) -> None:
-    """Execute a queued program execution request."""
+    """Execute queued program execution request."""
+
+    assert task_id is not None or submission_id is not None, "task_id or submission_id must be provided"
 
     with Session(engine) as db_session:
-        request: Tasks | ExerciseSubmission | None = None
+        request: Task | ExerciseSubmission | None = None
         
         if task_id:
             request = db_session.exec(
-                select(Tasks).where(Tasks.id == task_id, Tasks.status == TaskStatus.queued)
+                select(Task).where(Task.id == task_id, Task.status == TaskStatus.queued)
             ).first()
         
         elif submission_id:
@@ -214,7 +216,7 @@ def program_execution_queue(
         if not request:
             logger.error(
                 "src::sandbox:tasks::program_execution_queue:: "
-                "Program execution Request not found or is no longer in queue.",
+                "Program execution request not found or is no longer in queue.",
                 extra={
                     'task_id': str(task_id),
                     'submission_id': str(submission_id),

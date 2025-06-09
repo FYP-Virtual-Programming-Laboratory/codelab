@@ -3,11 +3,11 @@ from sqlmodel import update
 from src.events.handlers.base import AbstractLifeCycleEventHandler
 from src.events.schemas import (
     GroupCreationSchema,
-    SessionConfigurationCreationSchema,
+    SessionReasourceConfigurationCreationSchema,
     SessionCreationEventData,
-    UserCreationSchema,
+    StudentCreationSchema,
 )
-from src.models import Exercise, Group, Session, SessionConfig, TestCase, User
+from src.models import Exercise, Group, Session, SessionReasourceConfig, TestCase, Student
 from src.sandbox.tasks import prune_all_containers_task
 import uuid
 
@@ -32,10 +32,10 @@ class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):
         config_data = (
             event_data.session_config
             if event_data.session_config
-            else SessionConfigurationCreationSchema()
+            else SessionReasourceConfigurationCreationSchema()
         )
 
-        session_config = SessionConfig(session=session, **config_data.model_dump())
+        session_config = SessionReasourceConfig(session=session, **config_data.model_dump())
 
         self.db_session.add_all([session, session_config])
         self.db_session.commit()
@@ -66,25 +66,25 @@ class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):
 
         self.db_session.commit()
 
-    def _create_users(
+    def _create_students(
         self,
         session: Session,
-        user_data: list[UserCreationSchema],
+        student_data: list[StudentCreationSchema],
         group: Group | None = None,
-    ) -> list[User]:
-        """Create new users."""
-        users = [
-            User(
-                external_id=user.external_id,
+    ) -> list[Student]:
+        """Create new students."""
+        students = [
+            Student(
+                external_id=student.external_id,
                 session_id=session.id,
                 group_id=group.id if group else None,
             )
-            for user in user_data
+            for student in student_data
         ]
 
-        self.db_session.add_all(users)
+        self.db_session.add_all(students)
         self.db_session.commit()
-        return users
+        return students
 
     def _create_groups(
         self,
@@ -98,12 +98,12 @@ class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):
                 session_id=session.id,
             )
 
-            users = self._create_users(
+            students = self._create_students(
                 session=session,
-                user_data=group.students,
+                student_data=group.students,
                 group=group_record,
             )
-            self.db_session.add_all([group_record, *users])
+            self.db_session.add_all([group_record, *students])
 
         self.db_session.commit()
 
@@ -114,7 +114,7 @@ class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):
     ) -> None:
         """Handle the event data."""
 
-        # first deactivate all previously active sessions for the same user (if provided)
+        # first deactivate all previously active sessions for the same student (if provided)
         self.db_session.exec(
             update(Session).where(Session.is_active == True).values(is_active=False)
         )
@@ -129,9 +129,9 @@ class SessionCreatedEventHandler(AbstractLifeCycleEventHandler):
         # create excesises and their associated test cases
         self._create_exercise(session, event_data)
 
-        # finally create all users and groups
+        # finally create all students and groups
         if event_data.students:
-            self._create_users(session, event_data.students)
+            self._create_students(session, event_data.students)
 
         if event_data.groups:
             self._create_groups(session, event_data.groups)

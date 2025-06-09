@@ -16,4 +16,6 @@ celery -A src.worker.celery_app multi start 2 \
 
 
 # Keep the container running
+# create a log file if it doesn't exist
+touch /codelab/logs/celery.log
 tail -f /codelab/logs/*.log

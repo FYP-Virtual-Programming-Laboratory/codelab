@@ -21,16 +21,16 @@ class ExerciseCreationSchema(BaseModel):
     test_cases: list[TestCaseCreationSchema]
 
 
-class UserCreationSchema(BaseModel):
+class StudentCreationSchema(BaseModel):
     external_id: str
 
 
 class GroupCreationSchema(BaseModel):
     external_id: str
-    students: list[UserCreationSchema] = Field(min_length=1)
+    students: list[StudentCreationSchema] = Field(min_length=1)
 
 
-class SessionConfigurationCreationSchema(BaseModel):
+class SessionReasourceConfigurationCreationSchema(BaseModel):
     max_queue_size: PositiveInt = Field(
         default=15,
         description="The maximum number of tasks allowed for a students to submit at a time.",
@@ -70,8 +70,8 @@ class SessionConfigurationCreationSchema(BaseModel):
 class SessionCreationEventData(BaseModel):
     exercises: list[ExerciseCreationSchema] = Field(min_length=1)
     groups: list[GroupCreationSchema] | None = None
-    students: list[UserCreationSchema] | None = None
-    session_config: SessionConfigurationCreationSchema | None = None
+    students: list[StudentCreationSchema] | None = None
+    session_config: SessionReasourceConfigurationCreationSchema | None = None
     language_image_id: UUID
 
     @model_validator(mode="after")
@@ -102,14 +102,14 @@ class SessionCreationEventData(BaseModel):
         return self
 
 
-class UserJoinEventData(BaseModel):
-    user_external_id: str
+class StudentJoinEventData(BaseModel):
+    student_external_id: str
 
 
 class LifeCycleEventData(BaseModel):
     event: LifeCycleEvent
     external_session_id: str
-    event_data: SessionCreationEventData | UserJoinEventData | None = Field(default=None)
+    event_data: SessionCreationEventData | StudentJoinEventData | None = Field(default=None)
 
     @model_validator(mode="after")
     def validate_event_data(self) -> Self:
@@ -120,10 +120,10 @@ class LifeCycleEventData(BaseModel):
                     "Event data must be of type SessionCreationEventData for SESSION_CREATED."
                 )
 
-        if self.event == LifeCycleEvent.USER_JOIN:
-            if not isinstance(self.event_data, UserJoinEventData):
+        if self.event == LifeCycleEvent.STUDENT_JOIN:
+            if not isinstance(self.event_data, StudentJoinEventData):
                 raise ValueError(
-                    "Event data must be of type UserJoinEventData for USER_JOIN."
+                    "Event data must be of type StudentJoinEventData for STUDENT_JOIN."
                 )
 
         return self

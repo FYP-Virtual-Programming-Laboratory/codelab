@@ -145,26 +145,15 @@ class LanguageImagePublicShcema(BaseModel):
 
 
 class CreateTaskExecutionSchema(BaseModel):
-    external_user_id: str
-    external_excercise_id: str
+    excercise_id: UUID
     entry_file_path: NewPath
 
 
 class CreateExcerciseExecutionSchema(BaseModel):
-    external_user_id: str | None = None
-    external_group_id: str | None = None
-    external_excercise_id: str
+    group_id: UUID | None = None
+    excercise_id: UUID
     entry_file_path: NewPath
     
-    @model_validator(mode="after")
-    def validate_group_id_or_user_id(self) -> Self:
-        """Check that either group_id or user_id was supplied."""
-        
-        if not (self.external_user_id or self.external_group_id):
-            raise ValueError('external_user_id or external_group_id required for excersise submission')
-
-        return self
-
 
 class ExecutionLogSchema(BaseModel):
     timestamp: datetime
